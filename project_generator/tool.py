@@ -110,6 +110,9 @@ class ToolsSupported:
             raise RuntimeError("%s does not support specified tool: %s" % (key, tool))
         return value
 
+    def get_supported(self):
+        return self.TOOLS.keys()
+
 def export(exporter, data, tool, env_settings):
     """ Invokes tool generator. """
     try:
@@ -165,5 +168,5 @@ def load_definitions(def_dir=None):
             command = ['git', 'pull', '--rebase' ,'origin', 'master']
             subprocess.call(command, cwd=definitions_directory)
         else:
-            command = ['git', 'clone', 'https://github.com/0xc0170/project_generator_definitions.git', definitions_directory]
+            command = ['git', 'clone', 'https://github.com/project-generator/project_generator_definitions.git', definitions_directory]
             subprocess.call(command, cwd=config_directory)

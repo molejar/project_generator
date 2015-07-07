@@ -53,7 +53,7 @@ FILES_EXTENSIONS = {
     'source_files_c' : ['c'],
     'source_files_cpp' : ['cpp', 'cc'],
     'source_files_lib' : ['lib', 'ar', 'a'],
-    'source_files_obj' : ['o'],
+    'source_files_obj' : ['o','obj'],
     'linker_file' : ['sct', 'ld', 'lin', 'icf'],
 }
 
@@ -69,17 +69,15 @@ class ToolSpecificSettings:
         self.misc = {}
 
         self.linker_file = None
+        self.template = None
 
     def add_settings(self, data_dictionary, group_name):
-        if 'source_paths' in data_dictionary:
-            self.source_paths.extend(data_dictionary['source_paths'])
-
-        if 'source_files' in data_dictionary:
+        if 'sources' in data_dictionary:
             self._process_source_files(
-                data_dictionary['source_files'], group_name)
+                data_dictionary['sources'], group_name)
 
-        if 'include_paths' in data_dictionary:
-            self.include_paths.extend([x for x in data_dictionary['include_paths'] if x is not None])
+        if 'includes' in data_dictionary:
+            self.include_paths.extend([x for x in data_dictionary['includes'] if x is not None])
 
         if 'macros' in data_dictionary:
             self.macros.extend([x for x in data_dictionary['macros'] if x is not None])
@@ -92,6 +90,9 @@ class ToolSpecificSettings:
 
         if 'misc' in data_dictionary:
             self.misc.update(data_dictionary['misc'])
+
+        if 'template' in data_dictionary:
+            self.template = data_dictionary['template']
 
     def source_of_type(self, filetype):
         """return a dictionary of groups and the sources of a specified type within them"""
@@ -115,10 +116,10 @@ class ToolSpecificSettings:
 
     def _process_source_files(self, files, group_name):
         extensions = ['cpp', 'c', 's', 'obj', 'lib']
-
         mappings = defaultdict(lambda: None)
 
         mappings['o'] = 'obj'
+
         mappings['a'] = 'lib'
         mappings['ar'] = 'lib'
         mappings['cc'] = 'cpp'
@@ -182,6 +183,8 @@ class Project:
         }
         self.output_type = self.output_types['executable']
 
+        self.debugger = 'cmsis-dap'
+
         self.linker_file = None
         self.tool_specific = defaultdict(ToolSpecificSettings)
 
@@ -189,29 +192,47 @@ class Project:
         self.project_files = {}
         self.project_name = None
         self.tools = ToolsSupported()
-
+        done = False
         for project_file in project_files:
-            with open(project_file, 'rt') as f:
+            try:
+                f = open(project_file, 'rt')
                 project_file_data = yaml.load(f)
+                done = True
+            except IOError:
+                project_file_data = project_files
+                break
+            self.set_attributes(project_file_data)
+        if not done:
+            self.set_attributes(project_file_data)
+        if self.project_dir['path'] == '':
+            self.project_dir['path'] = self.workspace.settings.generated_projects_dir_default
 
-            if 'common' in project_file_data:
-                group_name = 'default'
+        if len(self.tools_supported) == 0:
+            self.tools_supported = [self.workspace.settings.DEFAULT_TOOL]
+
+    def set_attributes(self,project_file_data):
+        if 'common' in project_file_data:
                 if 'output' in project_file_data['common']:
                     if project_file_data['common']['output'][0] not in self.output_types:
                         raise RuntimeError("Invalid Output Type.")
 
                     self.output_type = self.output_types[project_file_data['common']['output'][0]]
 
-                if 'group_name' in project_file_data['common']:
-                    group_name = project_file_data['common']['group_name'][0]
-
-                if 'include_paths' in project_file_data['common']:
+                if 'includes' in project_file_data['common']:
                     self.include_paths.extend(
-                        [os.path.normpath(x) for x in project_file_data['common']['include_paths'] if x is not None])
+                        [os.path.normpath(x) for x in project_file_data['common']['includes'] if x is not None])
 
-                if 'source_files' in project_file_data['common']:
-                    source_paths = self._process_source_files(project_file_data['common']['source_files'], group_name)
-                    for source_path in source_paths:
+                if 'sources' in project_file_data['common']:
+                    if type(project_file_data['common']['sources']) == type(dict()):
+                        group_names = project_file_data['common']['sources'].keys()
+                        source_paths = [self._process_source_files(project_file_data['common']['sources'][group_name], group_name) for group_name in group_names]
+                    else:
+                        if 'group_name' in project_file_data['common']:
+                             group_name = project_file_data['common']['group_name'][0]
+                        else:
+                            group_name = 'default'
+                        self._process_source_files(project_file_data['common']['sources'], group_name)
+                    for source_path in self.source_paths:
                         if os.path.normpath(source_path) not in self.include_paths:
                             self.include_paths.extend([source_path])
 
@@ -230,7 +251,7 @@ class Project:
                     self.target = project_file_data['common']['target'][0]
 
                 if 'name' in project_file_data['common']:
-                    self.name = project_file_data['common']['name']
+                    self.name = project_file_data['common'][0]
 
                 if 'mcu' in project_file_data['common']:
                     self.mcu = project_file_data['common']['mcu'][0]
@@ -238,38 +259,33 @@ class Project:
                 if 'build_dir' in project_file_data['common']:
                     self.build_dir = project_file_data['common']['build_dir'][0]
 
+                if 'debugger' in project_file_data['common']:
+                    self.debugger = project_file_data['common']['debugger'][0]
+
                 if 'tools_supported' in project_file_data['common']:
                     self.tools_supported.extend(
                         [x for x in project_file_data['common']['tools_supported'] if x is not None])
 
-            if 'tool_specific' in project_file_data:
-                for tool_name, tool_settings in project_file_data['tool_specific'].items():
-                    self.tool_specific[tool_name].add_settings(
-                        tool_settings, group_name)
-
-        if self.project_dir['path'] == '':
-            self.project_dir['path'] = self.workspace.settings.generated_projects_dir_default
-
-        if len(self.tools_supported) == 0:
-            self.tools_supported = [self.workspace.settings.DEFAULT_TOOL]
+        if 'tool_specific' in project_file_data:
+            group_name = 'default'
+            for tool_name, tool_settings in project_file_data['tool_specific'].items():
+                self.tool_specific[tool_name].add_settings(
+                    tool_settings, group_name)
 
     def _process_source_files(self, files, group_name):
         source_paths = []
         extensions = ['cpp', 'c', 's', 'obj', 'lib']
-
         mappings = defaultdict(lambda: None)
-
         mappings['o'] = 'obj'
         mappings['a'] = 'lib'
         mappings['ar'] = 'lib'
         mappings['cc'] = 'cpp'
-
         if group_name not in self.source_groups:
             self.source_groups[group_name] = {}
 
         for source_file in files:
             if os.path.isdir(source_file):
-                source_paths.append(source_file)
+                self.source_paths.append(os.path.normpath(source_file))
                 self._process_source_files([os.path.join(os.path.normpath(source_file), f) for f in os.listdir(
                     source_file) if os.path.isfile(os.path.join(os.path.normpath(source_file), f))], group_name)
 
@@ -284,9 +300,8 @@ class Project:
 
             self.source_groups[group_name][extension].append(os.path.normpath(source_file))
 
-            if os.path.dirname(source_file) not in self.source_paths:
-                self.source_paths.append(os.path.dirname(source_file))
-
+            if not os.path.dirname(source_file) in self.source_paths:
+                self.source_paths.append(os.path.normpath(os.path.dirname(source_file)))
         return source_paths
 
     def clean(self, project_name, tool):
@@ -391,17 +406,14 @@ class Project:
             files[group] = []
             if filetype in group_contents:
                 files[group].extend(group_contents[filetype])
-
         return files
 
     def all_sources_of_type(self, filetype):
         """return a list of the sources of a specified type"""
         files = []
-
         for group, group_contents in self.source_groups.items():
             if filetype in group_contents:
                 files.extend(group_contents[filetype])
-
         return files
 
     def generate_dict_for_tool(self, tool):
@@ -421,8 +433,9 @@ class Project:
             'output_type': self.output_type,
             'build_dir' : self.build_dir,
             'tools_supported' : self.tools_supported,
+            'debugger' : self.debugger,
             'output_dir' : self.output_dir,
-            'include_paths': self.include_paths + list(flatten([settings.include_paths for settings in tool_specific_settings])),
+            'includes': self.include_paths + list(flatten([settings.include_paths for settings in tool_specific_settings])),
             'source_paths': self.source_paths + list(flatten([settings.source_paths for settings in tool_specific_settings])),
             'source_files': merge_recursive(self.source_groups,
                                             { k: v for settings in tool_specific_settings for k, v in settings.source_groups.items() },
@@ -437,12 +450,15 @@ class Project:
             'source_files_s': [merge_recursive(self.source_of_type('s'),
                                                { k: v for settings in [settings.source_of_type('s') for settings in tool_specific_settings] for k, v in settings.items() },
                                                toolchain_specific_settings.source_of_type('s'))],
-            'source_files_obj': self.all_sources_of_type('obj') +
-                                list(flatten([settings.all_sources_of_type('obj') for settings in tool_specific_settings])) +
-                                toolchain_specific_settings.all_sources_of_type('obj'),
-            'source_files_lib': self.all_sources_of_type('lib') +
-                                list(flatten([settings.all_sources_of_type('lib') for settings in tool_specific_settings])) +
-                                toolchain_specific_settings.all_sources_of_type('lib'),
+            'source_files_obj': [merge_recursive(self.source_of_type('obj'),
+                                               { k: v for settings in [settings.source_of_type('obj') for settings in tool_specific_settings] for k, v in settings.items() },
+                                               toolchain_specific_settings.source_of_type('obj')),
+                                                self.source_of_type('o'),
+                                               { k: v for settings in [settings.source_of_type('o') for settings in tool_specific_settings] for k, v in settings.items() },
+                                               toolchain_specific_settings.source_of_type('o')],
+             'source_files_lib': [merge_recursive(self.source_of_type('lib'),
+                                               { k: v for settings in [settings.source_of_type('lib') for settings in tool_specific_settings] for k, v in settings.items() },
+                                               toolchain_specific_settings.source_of_type('lib'))],
             'linker_file': self.linker_file
                         or toolchain_specific_settings.linker_file or [tool_settings.linker_file for tool_settings in tool_specific_settings if tool_settings.linker_file][0],
             'macros': self.macros +
@@ -450,7 +466,8 @@ class Project:
                       toolchain_specific_settings.macros,
             'misc': [merge_recursive({ k: v for settings in tool_specific_settings for k, v in settings.misc.items() },
                                      toolchain_specific_settings.misc)],
-            'project_dir': self.project_dir
+            'project_dir': self.project_dir,
+            'template' : toolchain_specific_settings.template or [tool_settings.template for tool_settings in tool_specific_settings if tool_settings.template],
         }
         self.validate_generated_dic(d)
 
@@ -463,7 +480,6 @@ class Project:
         else:
              output_dir = os.path.join(self.project_dir['path'], "%s_%s" % (tool, self.name))
         d['output_dir']['path'] = os.path.normpath(output_dir)
-
         return d
 
     def validate_generated_dic(self, dic):
@@ -519,51 +535,70 @@ class Project:
         shutil.copy2(os.path.join(os.getcwd(), linker), os.path.join(os.getcwd(), proj_dic['output_dir']['path'], linker))
 
     @staticmethod
-    def scrape_dir(root, directory, project_name, board, list_sources):
-        data = {
-            'common': {
-                'linker_file': [],
-                'source_files': [],
-                'include_paths': [],
-                'source_files_obj' : [],
-                'source_files_lib' : [],
-                'target': [],
-            }
-        }
+    def determine_tool(linker_ext):
+        if "sct" in linker_ext or "lin" in linker_ext:
+            return "uvision"
+        elif "ld" in linker_ext:
+            return "gcc"
+        elif "icf" in linker_ext:
+            return "iar"
 
-        linker_filetypes = FILES_EXTENSIONS['linker_file']
-        source_filetypes = FILES_EXTENSIONS['source_files_c'] + FILES_EXTENSIONS['source_files_cpp'] + FILES_EXTENSIONS['source_files_s']
-        include_filetypes = FILES_EXTENSIONS['include_paths']
-        lib_filetypes = FILES_EXTENSIONS['source_files_lib']
-        obj_filetypes = FILES_EXTENSIONS['source_files_obj']
-
+    @staticmethod
+    def scan(section, root, directory, extensions, is_path):
+        if section == "sources":
+            data_dict = {}
+        else:
+            data_dict = []
         for dirpath, dirnames, files in os.walk(directory):
             for filename in files:
-                extension = filename.split('.')[-1]
+                ext = filename.split('.')[-1]
                 relpath = os.path.relpath(dirpath, root)
+                if ext in extensions:
+                    if section == "sources":
+                        dir = directory.split(os.path.sep)[-1] if dirpath == directory else dirpath.replace(directory,'').split(os.path.sep)[1]
+                        if dir in data_dict:
+                            data_dict[dir].append(os.path.join(relpath,filename))
+                        else:
+                            data_dict[dir] = [(os.path.join(relpath,filename))]
+                    elif section == 'includes':
+                        dirs = relpath.split(os.path.sep)
+                        for i in range(1,len(dirs)+1):
+                            data_dict.append(os.path.sep.join(dirs[:i]))
+                    else:
+                        data_dict.append(relpath if is_path else os.path.join(relpath,filename))
+        if section == "sources":
+            return data_dict
+        return list(set(data_dict))
 
-                if extension in linker_filetypes:
-                    data['common']['linker_file'].append(os.path.join(relpath, filename))
-                elif extension in source_filetypes:
-                    data['common']['source_files'].append(os.path.join(relpath, filename) if list_sources else relpath)
-                elif extension in include_filetypes:
-                    data['common']['include_paths'].append(relpath)
-                elif extension in lib_filetypes:
-                    data['common']['source_files_lib'].append(os.path.join(relpath, filename))
-                elif extension in obj_filetypes:
-                    data['common']['source_files_obj'].append(os.path.join(relpath, filename))
+    @staticmethod
+    def create_yaml(root, directory, project_name, board, list_sources):
+        common_section = {
+                'linker_file': [False, FILES_EXTENSIONS['linker_file']],
+                'sources': [False,FILES_EXTENSIONS['source_files_c'] + FILES_EXTENSIONS['source_files_cpp'] +
+                            FILES_EXTENSIONS['source_files_s'] + FILES_EXTENSIONS['source_files_obj'] + FILES_EXTENSIONS['source_files_lib']],
+                'includes': [True,FILES_EXTENSIONS['include_paths']],
+                'target': [False,[]],
+        }
+        data = {'projects':{
+                   project_name:{
+                        'common':{},
+                         'tool_specific':{}
+                         }
+                    }
+                }
 
-        data['common']['source_files'] = list(set(data['common']['source_files']))
-        data['common']['include_paths'] = list(set(data['common']['include_paths']))
+        for section in common_section:
+            if(len(common_section[section][1]) > 0):
+                data['projects'][project_name]['common'][section]=Project.scan(section, root, directory,common_section[section][1],common_section[section][0])
 
-        if len(data['common']['linker_file']) == 0:
-            data['common']['linker_file'].append("No linker file found")
-
-        data['common']['target'].append(board)
+        data['projects'][project_name]['common']['target'] = []
+        data['projects'][project_name]['common']['target'].append(board)
+        tool = Project.determine_tool(str(data['projects'][project_name]['common']['linker_file']).split('.')[-1])
+        data['projects'][project_name]['tool_specific'] = {tool : {'linker_file':data['projects'][project_name]['common']['linker_file']}}
 
         logging.debug('Generating yaml file')
 
-        filename = project_name.replace(' ', '_').lower() + '.yaml'
+        filename = 'projects.yaml'
 
         #TODO: fix
         if os.path.isfile(os.path.join(directory, filename)):
@@ -583,6 +618,5 @@ class Project:
                     break
                 except ValueError:
                     continue
-
         with open(os.path.join(root, filename), 'wt') as f:
             f.write(yaml.dump(data, default_flow_style=False))

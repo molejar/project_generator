@@ -86,17 +86,16 @@ class MakefileGccArmExporter(Exporter):
     def fix_paths(self, data, name, env_settings):
         # get relative path and fix all paths within a project
         fixed_paths = []
-        for path in data['include_paths']:
+        for path in data['includes']:
             fixed_paths.append(join(data['output_dir']['rel_path'], normpath(path)))
-        data['include_paths'] = fixed_paths
+        data['includes'] = fixed_paths
         fixed_paths = []
-        for path in data['source_files_lib']:
-            fixed_paths.append(join(data['output_dir']['rel_path'], normpath(path)))
-        data['source_files_lib'] = fixed_paths
-        fixed_paths = []
-        for path in data['source_files_obj']:
-            fixed_paths.append(join(data['output_dir']['rel_path'], normpath(path)))
-        data['source_files_obj'] = fixed_paths
+        for k in data['source_files_lib'][0].keys():
+            data['source_files_lib'][0][k] = [join(data['output_dir']['rel_path'], normpath(path)) for path in data['source_files_lib'][0][k]]
+
+        for k in data['source_files_obj'][0].keys():
+            data['source_files_obj'][0][k] = [join(data['output_dir']['rel_path'], normpath(path)) for path in data['source_files_obj'][0][k]]
+
         fixed_paths = []
         for path in data['source_paths']:
             fixed_paths.append(join(data['output_dir']['rel_path'], normpath(path)))
@@ -107,7 +106,7 @@ class MakefileGccArmExporter(Exporter):
     def generate(self, data, env_settings):
         """ Processes misc options specific for GCC ARM, and run generator. """
         self.process_data_for_makefile(data, env_settings, "make_gcc_arm")
-        project_path, makefile = self.gen_file('makefile_gcc.tmpl', data, 'Makefile', data['output_dir']['path'])
+        project_path, makefile = self.gen_file_jinja('makefile_gcc.tmpl', data, 'Makefile', data['output_dir']['path'])
         return project_path, [makefile]
 
     def process_data_for_makefile(self, data, env_settings, name):

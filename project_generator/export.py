@@ -20,9 +20,8 @@ help = 'Export a project record'
 
 def run(args):
     workspace = Workspace(args.file, os.getcwd())
-
     if args.defdirectory:
-        workspace.settings.update_definitions_dir(args.defdirectory)
+        workspace.settings.update_definitions_dir(os.path.join(os.getcwd(), args.defdirectory))
     else:
         update(False, workspace.settings)
 
@@ -44,7 +43,8 @@ def run(args):
 def setup(subparser):
     subparser.add_argument(
         "-f", "--file", help="YAML projects file", default='projects.yaml')
-    subparser.add_argument("-p", "--project", help="Project to be generated")
+    subparser.add_argument(
+        "-p", "--project", help="Project to be generated")
     subparser.add_argument(
         "-t", "--tool", help="Create project files for provided tool (uvision by default)")
     subparser.add_argument(
