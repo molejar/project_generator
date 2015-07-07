@@ -12,15 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import os
+
 from .workspace import Workspace
 
 help = 'List all projects'
 
 
 def run(args):
-    workspace = Workspace(args.file, os.getcwd())
-    workspace.list_projects()
+    if args.file != "X":
+        workspace = Workspace(args.file, os.getcwd())
+        workspace.list(args.section.lower())
+    else:
+        Workspace.pgen_list(args.section.lower())
 
 
 def setup(subparser):
-    subparser.add_argument("-f", "--file", help="YAML projects file", default='projects.yaml')
+    subparser.add_argument("section", choices =['targets','tools','projects'],    help="What section you would like listed", default='projects')
+    subparser.add_argument("-f", "--file", help="YAML projects file", default='X')
