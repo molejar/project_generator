@@ -4,7 +4,9 @@
 # Licensed under the Apache License, Version 2.0
 # See LICENSE file for details.
 
-from .exporter import Exporter
+import copy
+
+from .tool import Tool, Builder, Exporter
 
 class gdb_definitions():
 
@@ -14,8 +16,20 @@ class gdb_definitions():
     }
 
 
-class GDB(Exporter):
-    def export_project(self, data, env_settings):
+class GDB(Tool, Exporter, Builder):
+    def __init__(self, workspace, env_settings):
+        self.workspace = workspace
+        self.env_settings = env_settings
+
+    @staticmethod
+    def get_toolnames():
+        return ['gdb']
+
+    @staticmethod
+    def get_toolchain():
+        return None
+
+    def export_project(self):
         # for native debugging, no command files are necessary
         return None, []
 
@@ -23,7 +37,8 @@ class GDB(Exporter):
         # !!! TODO: should be yes for native targets
         return False
 
-    def is_supported_by_default(self, target):
+    @staticmethod
+    def is_supported_by_default(target):
         # does not require additional information
         return True
 
@@ -31,19 +46,45 @@ class GDB(Exporter):
 class ARMNoneEABIGDB(GDB):
     SUPPORTED = gdb_definitions.SUPPORTED_MCUS
 
-    def export_project(self, data, env_settings):
-        expanded_dic = data.copy()
+    generated_project = {
+        'path': '',
+        'files': {
+            'startupfile': '',
+        }
+    }
+
+    def __init__(self, workspace, env_settings):
+        super(ARMNoneEABIGDB, self).__init__(workspace, env_settings)
+
+    @staticmethod
+    def get_toolnames():
+        return ['gdb']
+
+    @staticmethod
+    def get_toolchain():
+        return None
+
+    def export_project(self):
+        generated_projects = copy.deepcopy(self.generated_project)
+        expanded_dic = self.workspace.copy()
         
         # !!! TODO: store and read settings from gdb_definitions
         expanded_dic['gdb_server_port'] = 3333
 
         project_path, startupfile = self.gen_file_jinja(
-            'gdb.tmpl', expanded_dic, '%s.gdbstartup' % data['name'], expanded_dic['output_dir']['path'])
-        return project_path, [startupfile]
+            'gdb.tmpl', expanded_dic, '%s.gdbstartup' % expanded_dic['name'], expanded_dic['output_dir']['path'])
+        generated_projects['path'] = project_path
+        generated_projects['files']['startupfile'] = startupfile
+        return generated_projects
+
+    def get_generated_project_files(self):
+        return {'path': self.workspace['path'], 'files': [self.workspace['files']['startupfile']]}
+
 
     def supports_target(self, target):
         return target in self.SUPPORTED
 
-    def is_supported_by_default(self, target):
+    @staticmethod
+    def is_supported_by_default(target):
         # does not require additional information
         return True

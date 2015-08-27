@@ -15,26 +15,19 @@
 import argparse
 import os
 import logging
+
 import pkg_resources
 
-from . import init
-from . import clean
-from . import export
-from . import update
-from . import list_projects
-from . import build
-from . import flash
+from .commands import build, clean, export, init, list_projects, import_command
 
 subcommands = {
     'init': init,
     'export': export,
     'clean': clean,
     'list': list_projects,
-    'update': update,
     'build': build,
-    'flash': flash,
+    'import': import_command,
 }
-
 
 def main():
     # Parse Options
@@ -62,11 +55,12 @@ def main():
     verbosity = args.verbosity - args.quietness
 
     logging_level = max(logging.INFO - (10 * verbosity), 0)
-    logging.basicConfig(level=logging_level)
+
+    logging.basicConfig(format="%(levelname)s\t%(message)s", level=logging_level)
 
     logging.debug('This should be the project root: %s', os.getcwd())
 
-    args.func(args)
+    return args.func(args)
 
 if __name__ == '__main__':
     main()

@@ -1,4 +1,4 @@
-# Copyright 2014-2015 0xc0170
+# Copyright 2015 0xc0170
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,26 +15,24 @@
 import os
 import logging
 
-from .project import Project
+help = 'Import mcu to pgen. Provide a valid project file, pgen will parse to create mcu definition'
 
-help = 'Create a project record'
-
+from ..tools_supported import ToolsSupported
+from ..targets import mcu_create
 
 def run(args):
-    logging.debug("Generating the records.")
-
     root = os.getcwd()
 
-    directory = root if not args.directory else os.path.join(root, args.directory)
-    Project.create_yaml(root, directory, args.name, args.target.lower(), args.sources)
-
+    tool = ToolsSupported().get_tool(args.tool)
+    if tool is None:
+        return -1
+    return mcu_create(tool, args.mcu, args.file, args.tool)
 
 def setup(subparser):
     subparser.add_argument(
-        '-name', help='Project name')
+        '-mcu', action='store', required = True, help='MCU name')
+    # we need tool as some tools have same extensions and we might have problems
     subparser.add_argument(
-        '-tar', '--target', action='store', help='Target definition')
+        '-t', '--tool', action='store', required = True, help='Tool to be set')
     subparser.add_argument(
-        '-dir', '--directory', action='store', help='Directory selection', default=None)
-    subparser.add_argument(
-        '-s', '--sources', action='store_true', help='List all files, otherwise only folders for sources.')
+        '-f', '--file', action='store', required = True, help='Project file to be parsed (a valid tool project)')

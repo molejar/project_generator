@@ -7,7 +7,7 @@ python:
 install:
     - pip install .
     - pip install -r tests/requirements.txt
-    - ./tests/setup.sh
-script: nosetests --with-coverage --cover-package=project_generator
+    # - ./tests/setup.sh
+script: nosetests -v --with-coverage --cover-package=project_generator
 after_success: coveralls
 sudo: false
